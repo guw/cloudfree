@@ -24,20 +24,13 @@ import javax.servlet.http.HttpServletResponse;
 
 import org.apache.commons.lang.StringUtils;
 import org.apache.commons.lang.math.NumberUtils;
-import org.apache.solr.client.solrj.SolrQuery;
-import org.apache.solr.client.solrj.response.QueryResponse;
-import org.apache.solr.client.solrj.util.ClientUtils;
-import org.apache.solr.common.SolrDocument;
-import org.apache.solr.common.SolrDocumentList;
 import org.codehaus.jackson.JsonFactory;
 import org.codehaus.jackson.JsonGenerationException;
 import org.codehaus.jackson.JsonGenerator;
 import org.codehaus.jackson.map.JavaTypeMapper;
 import org.eclipse.gyrex.cds.model.IListing;
 import org.eclipse.gyrex.cds.model.IListingAttribute;
-import org.eclipse.gyrex.cds.model.IListingManager;
 import org.eclipse.gyrex.cds.model.documents.Document;
-import org.eclipse.gyrex.cds.model.solr.ISolrQueryExecutor;
 import org.eclipse.gyrex.cds.service.IListingService;
 import org.eclipse.gyrex.cds.service.query.ListingQuery;
 import org.eclipse.gyrex.cds.service.query.ListingQuery.ResultDimension;
@@ -47,7 +40,6 @@ import org.eclipse.gyrex.cds.service.result.IListingResultFacet;
 import org.eclipse.gyrex.cds.service.result.IListingResultFacetValue;
 import org.eclipse.gyrex.context.IRuntimeContext;
 import org.eclipse.gyrex.http.application.ApplicationException;
-import org.eclipse.gyrex.model.common.ModelUtil;
 import org.eclipse.gyrex.services.common.ServiceUtil;
 
 import com.ibm.icu.text.MeasureFormat;
@@ -61,7 +53,6 @@ public class JsonListingServlet extends HttpServlet {
 	}
 
 	private static final String ID_PATH_PREFIX = "/_id/";
-	private static final String AUTOCOMPLETE_PATH_PREFIX = "/_autocomplete/";
 
 	/** serialVersionUID */
 	private static final long serialVersionUID = 1L;
@@ -92,50 +83,6 @@ public class JsonListingServlet extends HttpServlet {
 		this.context = context;
 	}
 
-	/**
-	 * Performs auto completion.
-	 * 
-	 * @param req
-	 * @param resp
-	 * @param autocompleteTerm
-	 * @throws IOException
-	 */
-	private void doAutoComplete(final HttpServletRequest req, final HttpServletResponse resp, final String autocompleteTerm) throws IOException {
-		// auto completion is an advanced feature and not supported by all listing service implementations
-		final IListingManager listingManager = ModelUtil.getManager(IListingManager.class, getContext());
-		final ISolrQueryExecutor executor = (ISolrQueryExecutor) listingManager.getAdapter(ISolrQueryExecutor.class);
-		if (null == executor) {
-			throw new ApplicationException(503, "auto completion not supported");
-		}
-
-		final SolrQuery solrQuery = new SolrQuery(autocompleteTerm);
-		solrQuery.setQueryType("autocomplete");
-		// ignore variations
-		solrQuery.addFilterQuery("-type:variation");
-
-		final QueryResponse response = executor.query(solrQuery);
-
-		if (req.getParameter("text") != null) {
-			resp.setContentType("text/plain");
-		} else {
-			resp.setContentType("application/json");
-		}
-		resp.setCharacterEncoding("UTF-8");
-
-		final PrintWriter writer = resp.getWriter();
-		final JsonGenerator json = new JsonFactory().createJsonGenerator(writer);
-		if (req.getParameter("text") != null) {
-			json.useDefaultPrettyPrinter();
-		}
-
-		writeAutoCompleteResult(response, json, req);
-
-		json.close();
-	}
-
-	/* (non-Javadoc)
-	 * @see javax.servlet.http.HttpServlet#doGet(javax.servlet.http.HttpServletRequest, javax.servlet.http.HttpServletResponse)
-	 */
 	@Override
 	protected void doGet(final HttpServletRequest req, final HttpServletResponse resp) throws ServletException, IOException {
 		if (req.getParameter("help") != null) {
@@ -152,10 +99,6 @@ public class JsonListingServlet extends HttpServlet {
 			if (path.startsWith(ID_PATH_PREFIX)) {
 				// ID path
 				query.setFilterQueries(Document.ID + ":" + path.substring(ID_PATH_PREFIX.length()));
-			} else if (path.startsWith(AUTOCOMPLETE_PATH_PREFIX)) {
-				// auto complete
-				doAutoComplete(req, resp, path.substring(AUTOCOMPLETE_PATH_PREFIX.length()));
-				return;
 			} else {
 				// URI path
 				query.setFilterQueries(Document.URI_PATH + ":" + path.substring(1));
@@ -187,7 +130,7 @@ public class JsonListingServlet extends HttpServlet {
 			if ((null != categories) && (categories.length > 0)) {
 				for (final String cat : categories) {
 					if (StringUtils.isNotBlank(cat)) {
-						query.addFilterQuery("+category:" + ClientUtils.escapeQueryChars(cat));
+						query.addFilterQuery("+category:" + ListingQuery.escapeQueryChars(cat));
 					}
 				}
 			}
@@ -197,7 +140,7 @@ public class JsonListingServlet extends HttpServlet {
 			if ((null != tags) && (tags.length > 0)) {
 				for (final String tag : tags) {
 					if (StringUtils.isNotBlank(tag)) {
-						query.addFilterQuery("+tags:" + ClientUtils.escapeQueryChars(tag));
+						query.addFilterQuery("+tags:" + ListingQuery.escapeQueryChars(tag));
 					}
 				}
 			}
@@ -286,8 +229,6 @@ public class JsonListingServlet extends HttpServlet {
 		writer.println(getBaseUrl(req).append("<uripath>"));
 		writer.print("                       or: ");
 		writer.println(getBaseUrl(req).append(ID_PATH_PREFIX.substring(1)).append("<id>"));
-		writer.print("    Perform auto complete: ");
-		writer.println(getBaseUrl(req).append(AUTOCOMPLETE_PATH_PREFIX.substring(1)).append("<autocompleteterm>"));
 		writer.println();
 		writer.println();
 		writer.println("Search/Guided Navigation Parameters");
@@ -329,31 +270,6 @@ public class JsonListingServlet extends HttpServlet {
 		return context;
 	}
 
-	private void writeAutoCompleteResult(final QueryResponse response, final JsonGenerator json, final HttpServletRequest req) throws IOException {
-		json.writeStartObject();
-
-		writeValue("version", "1.0", json);
-		writeValue("type", "application/x-gyrex-fanshop-autocomplete-json", json);
-
-		writeValue("queryTime", response.getQTime(), json);
-
-		json.writeFieldName("products");
-		json.writeStartArray();
-		final SolrDocumentList results = response.getResults();
-		for (final SolrDocument solrDocument : results) {
-			json.writeStartObject();
-			writeValue("title", (String) solrDocument.getFirstValue("title"), json);
-			writeValue("uripath", (String) solrDocument.getFirstValue("uripath"), json);
-			writeValue("category", (String) solrDocument.getFirstValue("category"), json);
-			writeValue("id", (String) solrDocument.getFirstValue("id"), json);
-			writeValue("name", (String) solrDocument.getFirstValue("name"), json);
-			writeValue("img48", (String) solrDocument.getFirstValue("img48"), json);
-			json.writeEndObject();
-		}
-		json.writeEndArray();
-		json.writeEndObject();
-	}
-
 	private void writeFacet(final IListingResultFacet facet, final JsonGenerator json) throws IOException {
 		if (null == facet) {
 			return;
@@ -362,6 +278,9 @@ public class JsonListingServlet extends HttpServlet {
 
 		json.writeFieldName("label");
 		json.writeString(facet.getLabel());
+
+		json.writeFieldName("id");
+		json.writeString(facet.getId());
 
 		json.writeFieldName("values");
 		json.writeStartArray();
@@ -399,7 +318,7 @@ public class JsonListingServlet extends HttpServlet {
 		final IListingAttribute priceAttribute = listing.getAttribute("price");
 		if ((null != priceAttribute) && (priceAttribute.getValues().length > 0)) {
 			// the first price the formated store price
-			writeValue("shopPrice", MeasureFormat.getCurrencyFormat(ULocale.US).format(new CurrencyAmount((Double) priceAttribute.getValues()[0], com.ibm.icu.util.Currency.getInstance("USD"))), json);
+			writeValue("shopPrice", MeasureFormat.getCurrencyFormat(ULocale.GERMANY).format(new CurrencyAmount((Double) priceAttribute.getValues()[0], com.ibm.icu.util.Currency.getInstance("EUR"))), json);
 		}
 
 		final IListingAttribute typeAttribute = listing.getAttribute("type");
@@ -542,29 +461,29 @@ public class JsonListingServlet extends HttpServlet {
 
 				@Override
 				public void enhanceWithinObject(final JsonGenerator json) throws IOException {
-					final String productType = (String) product.getAttribute("type").getValues()[0];
-					if ("variable-product".equals(productType)) {
-						final Object[] variationids = product.getAttribute("variationids").getValues();
-						json.writeFieldName("variations");
-						json.writeStartObject();
-						final IListingManager manager = ModelUtil.getManager(IListingManager.class, getContext());
-						for (final Object variationId : variationids) {
-							final IListing variation = manager.findById((String) variationId);
-							if (null != variation) {
-								json.writeFieldName((String) variationId);
-								writeProduct(variation, json, req, null);
-							}
-						}
-						json.writeEndObject();
-					} else if ("variation".equals(productType)) {
-						final String masterid = (String) product.getAttribute("parentid").getValues()[0];
-						final IListingManager manager = ModelUtil.getManager(IListingManager.class, getContext());
-						final IListing master = manager.findById(masterid);
-						if (null != master) {
-							json.writeFieldName("master");
-							writeProduct(master, json, req, null);
-						}
-					}
+					//					final String productType = (String) product.getAttribute("type").getValues()[0];
+					//					if ("variable-product".equals(productType)) {
+					//						final Object[] variationids = product.getAttribute("variationids").getValues();
+					//						json.writeFieldName("variations");
+					//						json.writeStartObject();
+					//						final IListingManager manager = ModelUtil.getManager(IListingManager.class, getContext());
+					//						for (final Object variationId : variationids) {
+					//							final IListing variation = manager.findById((String) variationId);
+					//							if (null != variation) {
+					//								json.writeFieldName((String) variationId);
+					//								writeProduct(variation, json, req, null);
+					//							}
+					//						}
+					//						json.writeEndObject();
+					//					} else if ("variation".equals(productType)) {
+					//						final String masterid = (String) product.getAttribute("parentid").getValues()[0];
+					//						final IListingManager manager = ModelUtil.getManager(IListingManager.class, getContext());
+					//						final IListing master = manager.findById(masterid);
+					//						if (null != master) {
+					//							json.writeFieldName("master");
+					//							writeProduct(master, json, req, null);
+					//						}
+					//					}
 				}
 			});
 		}

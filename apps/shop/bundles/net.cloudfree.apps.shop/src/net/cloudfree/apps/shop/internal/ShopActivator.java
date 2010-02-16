@@ -45,14 +45,13 @@ public class ShopActivator extends BaseBundleActivator {
 	@Override
 	protected void doStart(final BundleContext context) throws Exception {
 		instance.set(this);
+
+		// register fan shop provider
+		getServiceHelper().registerService(ApplicationProvider.class.getName(), new ShopApplicationProvider(), "CloudFree.net", "Application provider for the CloudFree shop application.", null, null);
 	}
 
 	@Override
 	protected void doStop(final BundleContext context) throws Exception {
 		instance.set(null);
-
-		// register fan shop provider
-		getServiceHelper().registerService(ApplicationProvider.class.getName(), new ShopApplicationProvider(), "CloudFree.net", "Application provider for the CloudFree shop application.", null, null);
-
 	}
 }

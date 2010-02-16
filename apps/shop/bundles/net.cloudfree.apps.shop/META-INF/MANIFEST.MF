@@ -33,3 +33,5 @@ Require-Bundle: org.eclipse.gyrex.cds.model;bundle-version="1.0.0",
  org.eclipse.gyrex.configuration;bundle-version="1.0.0",
  org.eclipse.gyrex.model.common;bundle-version="1.0.0",
  org.eclipse.gyrex.services.common;bundle-version="1.0.0"
+Export-Package: net.cloudfree.apps.shop.internal,
+ net.cloudfree.apps.shop.internal.app

@@ -37,7 +37,7 @@ public class ShopApplication extends Application {
 	protected void doInit() throws CoreException {
 		try {
 			// register the  listing servlet
-			getApplicationServiceSupport().registerServlet("/listings/", new JsonListingServlet(getContext()), null);
+			getApplicationServiceSupport().registerServlet("/listings", new JsonListingServlet(getContext()), null);
 		} catch (final ServletException e) {
 			throw new CoreException(ShopActivator.getInstance().getStatusUtil().createError(0, e.getMessage(), e));
 		}
