@@ -101,7 +101,7 @@ public class JsonListingServlet extends HttpServlet {
 				query.setFilterQueries(Document.ID + ":" + path.substring(ID_PATH_PREFIX.length()));
 			} else {
 				// URI path
-				query.setFilterQueries(Document.URI_PATH + ":" + path.substring(1));
+				query.setFilterQueries(Document.URI_PATH + ":" + ListingQuery.escapeQueryChars(path.substring(1)));
 			}
 			query.setResultDimension(ResultDimension.FULL);
 			query.setMaxResults(1);
